@@ -1,0 +1,4 @@
+.env
+*.fsx
+node_modules/
+dist/
