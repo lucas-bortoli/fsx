@@ -1,7 +1,4 @@
-import { isAbsolute, resolve } from 'path'
 import FileSystem from '@lucas-bortoli/libdiscord-fs'
-import { FileHandle } from 'fs/promises'
-import { EventEmitter } from 'stream'
 
 const REMOTE_PATH_REGEXP = /^([A-Za-zÀ-ÖØ-öø-ÿ]+)::(\/.*)$/
 
@@ -23,9 +20,12 @@ const parseRemotePath = (p: string): ParsedRemotePath => {
     return { driveId: match[1], remotePath: match[2] }
 }
 
-const waitForEvent = (emitter: EventEmitter, event: string): Promise<void> => {
+/**
+ * Returns a Promise that resolves after a specified amount of time.
+ */
+const Wait = (ms: number): Promise<void> => {
     return new Promise(resolve => {
-        emitter.once(event, () => resolve())
+        setTimeout(resolve, ms)
     })
 }
 
@@ -39,6 +39,18 @@ const openFileSystem = async (driveId: string): Promise<FileSystem> => {
     return fs
 }
 
+/**
+ * Converts a byte count to a human-readable file size.
+ */
+const fileSize = (bytes: number): string => {
+    if (bytes == 0) { return "0.00 B"; }
+    var e = Math.floor(Math.log(bytes) / Math.log(1024));
+    return (bytes/Math.pow(1024, e)).toFixed(2)+' '+' KMGTP'.charAt(e)+'B';
+}
+
+/**
+ * Shows the help page, optionally with an error message to be included in it.
+ */
 const showHelpPageAndExit = (errorToBeShown?: string): never => {
     console.error(
 `fsx Help Page
@@ -57,8 +69,8 @@ Available commands:
         The file stream is read from STDIN. Pipe a file using your shell to upload it.
         EXAMPLE:
             $ cat file.txt | fsx upload drive::/documents/file.txt
-${errorToBeShown ? `${'-'.repeat(errorToBeShown.length + 7)}\nError: ${errorToBeShown}` : ''}`
-    )
+${errorToBeShown ? `${'-'.repeat(errorToBeShown.length + 7)}\nError: ${errorToBeShown}` : ''}`)
+
     return process.exit(1)
 }
 
@@ -79,6 +91,7 @@ const main = async () => {
     const operand2 = args[2]
 
     if (operation === 'download') {
+        // Validate remote path parameter
         if (!operand1)
             return showHelpPageAndExit('download: Missing parameters')
 
@@ -87,18 +100,28 @@ const main = async () => {
 
         const { driveId, remotePath } = parseRemotePath(operand1)
         const fileSystem = await openFileSystem(driveId)
+        const fileEntry = await fileSystem.getFileEntry(remotePath)
 
-        if (!await fileSystem.getFileEntry(remotePath)) {
+        // Check if file exists before downloading it
+        if (!fileEntry) {
             console.error(`File doesn't exist: ${driveId}::${remotePath}`)
             return process.exit(1)
         }
 
         const remoteFileStream = await fileSystem.createReadStream(remotePath)
 
+        // Pipe downloaded data to stdout
         remoteFileStream.pipe(process.stdout)
 
-        await waitForEvent(remoteFileStream, 'finish')
+        // Show status information
+        do {
+            process.stderr.write(`Downloading: ${fileSize(remoteFileStream.readBytes)} / ${fileSize(fileEntry.size)} - ${Math.round(remoteFileStream.readBytes / fileEntry.size * 100)}%\r`)
+            await Wait(500)
+        } while (!remoteFileStream.readableEnded)
+
+        process.stderr.write('\nDownload finished.\n')
     } else if (operation === 'upload') {
+        // Validate remote path parameter
         if (!operand1)
             return showHelpPageAndExit('upload: Missing parameters')
 
@@ -109,11 +132,18 @@ const main = async () => {
         const fileSystem = await openFileSystem(driveId)
         const remoteFileStream = await fileSystem.createWriteStream(remotePath)
 
+        // Pipe stdin to the upload stream
         process.stdin.pipe(remoteFileStream)
 
-        await waitForEvent(remoteFileStream, 'finish')
+        // Show status information
+        do {
+            process.stderr.write(`Uploading: ${fileSize(remoteFileStream.uploadedBytes)} sent\r`)
+            await Wait(500)
+        } while (!remoteFileStream.writableFinished)
+
+        process.stderr.write('\nUpload finished.\n')
+
         await fileSystem.writeDataFile()
-        console.log('File uploaded')
     } else {
         return showHelpPageAndExit(`Invalid command: ${operation}`)
     }
