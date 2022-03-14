@@ -39,6 +39,10 @@ const openFileSystem = async (driveId: string): Promise<FileSystem> => {
     return fs
 }
 
+const saveFileSystem = async (driveId: string, fs: FileSystem): Promise<void> => {
+    await fs.writeDataFile()
+} 
+
 /**
  * Converts a byte count to a human-readable file size.
  */
@@ -99,6 +103,11 @@ const main = async () => {
             return showHelpPageAndExit(`download: Invalid remote path ${operand1} (not in format driveId::/path/to/file)`)
 
         const { driveId, remotePath } = parseRemotePath(operand1)
+
+        // Can't download directories at once
+        if (remotePath.endsWith('/'))
+            return showHelpPageAndExit(`download: Invalid remote path ${operand1} (is a directory)`)
+
         const fileSystem = await openFileSystem(driveId)
         const fileEntry = await fileSystem.getFileEntry(remotePath)
 
@@ -129,6 +138,11 @@ const main = async () => {
             return showHelpPageAndExit(`upload: Invalid remote path ${operand1} (not in format driveId::/path/to/file)`)
 
         const { driveId, remotePath } = parseRemotePath(operand1)
+
+        // Can't upload a file with to a directory path
+        if (remotePath.endsWith('/'))
+            return showHelpPageAndExit(`upload: Invalid remote path ${operand1} (is a directory)`)
+
         const fileSystem = await openFileSystem(driveId)
         const remoteFileStream = await fileSystem.createWriteStream(remotePath)
 
@@ -143,16 +157,37 @@ const main = async () => {
 
         process.stderr.write('\nUpload finished.\n')
 
-        await fileSystem.writeDataFile()
+        await saveFileSystem(driveId, fileSystem)
+    } else if (operation === 'mv') {
+        // Validate remote path parameter
+        if (!operand1 || !operand2)
+            return showHelpPageAndExit('mv: Missing parameters')
+    
+        if (!isValidRemotePath(operand1))
+            return showHelpPageAndExit(`mv: Invalid remote path ${operand1} (not in format driveId::/path/to/file)`)
+        if (!isValidRemotePath(operand2))
+            return showHelpPageAndExit(`mv: Invalid remote path ${operand2} (not in format driveId::/path/to/file)`)
+    
+        const pathFrom = parseRemotePath(operand1)
+        const pathTo = parseRemotePath(operand2)
+
+        if (pathFrom.driveId !== pathTo.driveId) {
+            console.error(`mv: Unsupported cross-drive move operation (${pathFrom.driveId} -> ${pathTo.driveId})`)
+            return process.exit(1)
+        }
+
+        const fileSystem = await openFileSystem(pathFrom.driveId)
+
+        if (!await fileSystem.exists(pathFrom.remotePath)) {
+            console.error(`mv: Source path not found (${pathFrom.driveId}::${pathFrom.remotePath})`)
+            return process.exit(1)
+        }
+
+        await fileSystem.mv(pathFrom.remotePath, pathTo.remotePath)
+        await saveFileSystem(pathFrom.driveId, fileSystem)
     } else {
         return showHelpPageAndExit(`Invalid command: ${operation}`)
     }
 }
 
 main()
-
-/**
- * fsx upload|download FROM TO
- * fsx upload ./BetterCallSaul.S06E01.mp4 DriveA::/Séries/BCS/S06/
- * fsx download DriveA::/Séries/BCS/S06E02.mp4 ./
- */
