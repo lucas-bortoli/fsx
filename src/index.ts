@@ -1,3 +1,6 @@
+import * as fsp from 'fs/promises'
+import * as fs from 'fs'
+
 import FileSystem from '@lucas-bortoli/libdiscord-fs'
 
 const REMOTE_PATH_REGEXP = /^([A-Za-zÀ-ÖØ-öø-ÿ]+)::(\/.*)$/
@@ -30,16 +33,45 @@ const Wait = (ms: number): Promise<void> => {
 }
 
 /**
+ * Checks if a file exists in the filesystem.
+ * @param path Path to file
+ * @returns true if the file exists and is readable.
+ */
+const fsp_fileExists = async (path: string): Promise<boolean> => {
+    try {
+        await fsp.access(path, fs.constants.F_OK)
+        return true
+    } catch (error) {
+        return false
+    }
+}
+
+/**
  * Initializes a filesystem object.
  * @param driveId What drive id to use for the filesystem
  */
 const openFileSystem = async (driveId: string): Promise<FileSystem> => {
     const fs = new FileSystem(`${driveId}.fsx`, process.env.DISCORD_WEBHOOK)
-    await fs.loadDataFile()
+    
+    if (await fsp_fileExists(fs.dataFile + '.working')) {
+        // If there is a temporary file, we load it. 
+        fs.dataFile = fs.dataFile + '.working'
+        await fs.loadDataFile()
+    } else {
+        // Or else, we load the original file to memory and don't touch it.
+        await fs.loadDataFile()
+        fs.dataFile = fs.dataFile + '.working'
+    }
+    
     return fs
 }
 
-const saveFileSystem = async (driveId: string, fs: FileSystem): Promise<void> => {
+const saveFileSystem = async (fs: FileSystem, commit?: boolean): Promise<void> => {
+    if (commit) {
+        await fsp.rm(fs.dataFile)
+        fs.dataFile = fs.dataFile.replace('.working', '')
+    }
+    
     await fs.writeDataFile()
 } 
 
@@ -157,7 +189,7 @@ const main = async () => {
 
         process.stderr.write('\nUpload finished.\n')
 
-        await saveFileSystem(driveId, fileSystem)
+        await saveFileSystem(fileSystem)
     } else if (operation === 'mv') {
         // Validate remote path parameter
         if (!operand1 || !operand2)
@@ -184,7 +216,14 @@ const main = async () => {
         }
 
         await fileSystem.mv(pathFrom.remotePath, pathTo.remotePath)
-        await saveFileSystem(pathFrom.driveId, fileSystem)
+        await saveFileSystem(fileSystem)
+    } else if (operation === 'save') {
+        // Validate remote path parameter
+        if (!operand1)
+            return showHelpPageAndExit('save: Missing parameters')
+
+        const fileSystem = await openFileSystem(operand1)
+        await saveFileSystem(fileSystem, true)
     } else {
         return showHelpPageAndExit(`Invalid command: ${operation}`)
     }
