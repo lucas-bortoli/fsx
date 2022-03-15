@@ -1,7 +1,7 @@
 import * as fsp from 'fs/promises'
 import * as fs from 'fs'
 
-import FileSystem from '../../libdiscord-fs/lib/index.js'
+import FileSystem from '@lucas-bortoli/libdiscord-fs'
 
 const REMOTE_PATH_REGEXP = /^([A-Za-zÀ-ÖØ-öø-ÿ]+)::(\/.*)$/
 
