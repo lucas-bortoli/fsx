@@ -93,18 +93,26 @@ const showHelpPageAndExit = (errorToBeShown?: string): never => {
 
 Usage:
 
-    $ fsx {download|upload|ls|rm|mv} [...Arguments]
+    $ fsx {download|upload|ls|rm|mv|cp} [...Arguments]
 
 Available commands:
-        download driveId::/path/to/remote/file
-        The downloaded data is piped to STDOUT. Use shell redirection to write it to disk.
-        EXAMPLE:
-            $ fsx download drive::/documents/file.txt > file.txt
+        download: The downloaded data is piped to STDOUT. Use shell redirection
+        to write it to disk.
+            EXAMPLE:    $ fsx download drive::/documents/file.txt > file.txt
+        
+        upload: The file stream is read from STDIN. Pipe a file using your shell
+        to upload it.
+            EXAMPLE:    $ cat file.txt | fsx upload drive::/documents/file.txt
 
-        upload driveId::/path/to/where/file/will/be/stored
-        The file stream is read from STDIN. Pipe a file using your shell to upload it.
-        EXAMPLE:
-            $ cat file.txt | fsx upload drive::/documents/file.txt
+        ls: Lists the given directory.
+            EXAMPLE:    $ fsx ls drive::/Documents/Spreadsheets/
+
+        rm: Removes the given file/directory from the index. It does not,
+        however, delete the file from the server.
+            EXAMPLE:    $ fsx ls drive::/Documents/Spreadsheets/
+
+        cp: Copies a file or directory to a new location.
+            EXAMPLE:    $ fsx cp drive::/Pics/220315150302.jpg drive::/OldPics/
 ${errorToBeShown ? `${'-'.repeat(errorToBeShown.length + 7)}\nError: ${errorToBeShown}` : ''}`)
 
     return process.exit(1)
@@ -129,7 +137,9 @@ const main = async () => {
     if (!operation)
         return showHelpPageAndExit('No command given.')
 
-    if (operation === 'download') {
+    if (operation.replace('--', '') === 'help') {
+        return showHelpPageAndExit()
+    } else if (operation === 'download') {
         // Validate remote path parameter
         if (!operand1)
             return showHelpPageAndExit('download: Missing parameters')
