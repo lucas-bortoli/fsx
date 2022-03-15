@@ -1,7 +1,7 @@
 import * as fsp from 'fs/promises'
 import * as fs from 'fs'
 
-import FileSystem from '@lucas-bortoli/libdiscord-fs'
+import FileSystem from '../../libdiscord-fs/lib/index.js'
 
 const REMOTE_PATH_REGEXP = /^([A-Za-zÀ-ÖØ-öø-ÿ]+)::(\/.*)$/
 
@@ -126,6 +126,9 @@ const main = async () => {
     const operand1 = args[1]
     const operand2 = args[2]
 
+    if (!operation)
+        return showHelpPageAndExit('No command given.')
+
     if (operation === 'download') {
         // Validate remote path parameter
         if (!operand1)
@@ -136,18 +139,18 @@ const main = async () => {
 
         const { driveId, remotePath } = parseRemotePath(operand1)
 
-        // Can't download directories at once
-        if (remotePath.endsWith('/'))
-            return showHelpPageAndExit(`download: Invalid remote path ${operand1} (is a directory)`)
-
         const fileSystem = await openFileSystem(driveId)
-        const fileEntry = await fileSystem.getFileEntry(remotePath)
+        const fileEntry = await fileSystem.getEntry(remotePath)
 
         // Check if file exists before downloading it
         if (!fileEntry) {
             console.error(`File doesn't exist: ${driveId}::${remotePath}`)
             return process.exit(1)
         }
+
+        // Can't download directories at once
+        if (fileEntry.type === 'directory')
+            return showHelpPageAndExit(`download: Invalid remote path ${operand1} (is a directory)`)
 
         const remoteFileStream = await fileSystem.createReadStream(remotePath)
 
@@ -216,6 +219,51 @@ const main = async () => {
         }
 
         await fileSystem.mv(pathFrom.remotePath, pathTo.remotePath)
+        await saveFileSystem(fileSystem)
+    } else if (operation === 'rm') {
+        // Validate remote path parameter
+        if (!operand1)
+            return showHelpPageAndExit('rm: Missing parameters')
+
+        if (!isValidRemotePath(operand1))
+            return showHelpPageAndExit(`rm: Invalid remote path ${operand1} (not in format driveId::/path/to/file)`)
+        
+        const target = parseRemotePath(operand1)
+        const fileSystem = await openFileSystem(target.driveId)
+
+        if (!await fileSystem.exists(target.remotePath)) {
+            console.error(`rm: Path not found (${target.driveId}::${target.remotePath})`)
+            return process.exit(1)
+        }
+
+        await fileSystem.rm(target.remotePath)
+        await saveFileSystem(fileSystem)
+    } else if (operation === 'cp') {
+        // Validate remote path parameter
+        if (!operand1 || !operand2)
+            return showHelpPageAndExit('cp: Missing parameters')
+
+        if (!isValidRemotePath(operand1))
+            return showHelpPageAndExit(`cp: Invalid remote path ${operand1} (not in format driveId::/path/to/file)`)
+        if (!isValidRemotePath(operand2))
+            return showHelpPageAndExit(`mv: Invalid remote path ${operand2} (not in format driveId::/path/to/file)`)
+    
+        const pathFrom = parseRemotePath(operand1)
+        const pathTo = parseRemotePath(operand2)
+
+        if (pathFrom.driveId !== pathTo.driveId) {
+            console.error(`cp: Unsupported cross-drive copy operation (${pathFrom.driveId} -> ${pathTo.driveId})`)
+            return process.exit(1)
+        }
+
+        const fileSystem = await openFileSystem(pathFrom.driveId)
+
+        if (!await fileSystem.exists(pathFrom.remotePath)) {
+            console.error(`cp: Path not found (${pathFrom.driveId}::${pathFrom.remotePath})`)
+            return process.exit(1)
+        }
+
+        await fileSystem.cp(pathFrom.remotePath, pathTo.remotePath)
         await saveFileSystem(fileSystem)
     } else if (operation === 'save') {
         // Validate remote path parameter

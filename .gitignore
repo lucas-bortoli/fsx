@@ -1,4 +1,4 @@
 .env
-*.fsx
+*.fsx*
 node_modules/
 dist/
