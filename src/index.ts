@@ -3,6 +3,8 @@ import * as fs from 'fs'
 
 import FileSystem from '@lucas-bortoli/libdiscord-fs'
 
+import Utils from './utils.js'
+
 const REMOTE_PATH_REGEXP = /^([A-Za-zÀ-ÖØ-öø-ÿ]+)::(\/.*)$/
 
 interface ParsedRemotePath { driveId: string, remotePath: string }
@@ -21,15 +23,6 @@ const isValidRemotePath = (p: string): boolean => {
 const parseRemotePath = (p: string): ParsedRemotePath => {
     const match = p.match(REMOTE_PATH_REGEXP)
     return { driveId: match[1], remotePath: match[2] }
-}
-
-/**
- * Returns a Promise that resolves after a specified amount of time.
- */
-const Wait = (ms: number): Promise<void> => {
-    return new Promise(resolve => {
-        setTimeout(resolve, ms)
-    })
 }
 
 /**
@@ -150,7 +143,7 @@ const main = async () => {
         const { driveId, remotePath } = parseRemotePath(operand1)
 
         const fileSystem = await openFileSystem(driveId)
-        const fileEntry = await fileSystem.getEntry(remotePath)
+        const fileEntry = fileSystem.getEntry(remotePath)
 
         // Check if file exists before downloading it
         if (!fileEntry) {
@@ -170,7 +163,7 @@ const main = async () => {
         // Show status information
         do {
             process.stderr.write(`Downloading: ${fileSize(remoteFileStream.readBytes)} / ${fileSize(fileEntry.size)} - ${Math.round(remoteFileStream.readBytes / fileEntry.size * 100)}%\r`)
-            await Wait(500)
+            await Utils.Wait(500)
         } while (!remoteFileStream.readableEnded)
 
         process.stderr.write('\nDownload finished.\n')
@@ -197,7 +190,7 @@ const main = async () => {
         // Show status information
         do {
             process.stderr.write(`Uploading: ${fileSize(remoteFileStream.uploadedBytes)} sent\r`)
-            await Wait(500)
+            await Utils.Wait(500)
         } while (!remoteFileStream.writableFinished)
 
         process.stderr.write('\nUpload finished.\n')
@@ -223,12 +216,12 @@ const main = async () => {
 
         const fileSystem = await openFileSystem(pathFrom.driveId)
 
-        if (!await fileSystem.exists(pathFrom.remotePath)) {
+        if (!fileSystem.exists(pathFrom.remotePath)) {
             console.error(`mv: Source path not found (${pathFrom.driveId}::${pathFrom.remotePath})`)
             return process.exit(1)
         }
 
-        await fileSystem.mv(pathFrom.remotePath, pathTo.remotePath)
+        fileSystem.mv(pathFrom.remotePath, pathTo.remotePath)
         await saveFileSystem(fileSystem)
     } else if (operation === 'rm') {
         // Validate remote path parameter
@@ -246,7 +239,7 @@ const main = async () => {
             return process.exit(1)
         }
 
-        await fileSystem.rm(target.remotePath)
+        fileSystem.rm(target.remotePath)
         await saveFileSystem(fileSystem)
     } else if (operation === 'cp') {
         // Validate remote path parameter
@@ -268,13 +261,44 @@ const main = async () => {
 
         const fileSystem = await openFileSystem(pathFrom.driveId)
 
-        if (!await fileSystem.exists(pathFrom.remotePath)) {
+        if (!fileSystem.exists(pathFrom.remotePath)) {
             console.error(`cp: Path not found (${pathFrom.driveId}::${pathFrom.remotePath})`)
             return process.exit(1)
         }
 
-        await fileSystem.cp(pathFrom.remotePath, pathTo.remotePath)
+        fileSystem.cp(pathFrom.remotePath, pathTo.remotePath)
         await saveFileSystem(fileSystem)
+
+    } else if (operation === 'ls') {
+        // Validate remote path parameter
+        if (!operand1)
+            return showHelpPageAndExit('ls')
+        
+        if (!isValidRemotePath(operand1))
+            return showHelpPageAndExit(`ls: Invalid remote path ${operand1} (not in format driveId::/path/to/file)`)
+
+        const path = parseRemotePath(operand1)
+        const fileSystem = await openFileSystem(path.driveId)
+
+        const target = fileSystem.getEntry(path.remotePath)
+
+        if (!target) {
+            console.error(`ls: Path not found (${path.driveId}::${path.remotePath})`)
+            return process.exit(1)
+        }
+
+        if (target.type !== 'directory') {
+            console.error(`ls: Not a directory (${path.driveId}::${path.remotePath})`)
+            return process.exit(1)
+        }
+
+        for (const [ name, child ] of Utils.naturalSort(Object.entries(target.items))) {
+            if (child.type === 'directory') {
+                process.stdout.write(`${name.padEnd(16)} DIRECTORY ${Utils.unit(Object.values(child.items).length, 'item').padStart(12)}\n`)
+            } else {
+                process.stdout.write(`${name.padEnd(16)} FILE      ${fileSize(child.size).padStart(12)}\n`)
+            }
+        }
     } else if (operation === 'save') {
         // Validate remote path parameter
         if (!operand1)
