@@ -160,10 +160,23 @@ const main = async () => {
         // Pipe downloaded data to stdout
         remoteFileStream.pipe(process.stdout)
 
-        // Show status information
+        let previousTotalByteCount = 0
+        let dt = 0
+        let totalTime = 0
+        let transferRate = 0
+        
         do {
-            process.stderr.write(`Downloading: ${fileSize(remoteFileStream.readBytes)} / ${fileSize(fileEntry.size)} - ${Math.round(remoteFileStream.readBytes / fileEntry.size * 100)}%\r`)
-            await Utils.Wait(500)
+            if (previousTotalByteCount !== remoteFileStream.readBytes) {
+                transferRate = Math.floor((remoteFileStream.readBytes - previousTotalByteCount) / dt)
+                previousTotalByteCount = remoteFileStream.readBytes
+                dt = -0.5
+            }
+            process.stderr.clearLine(0)
+            process.stderr.cursorTo(0)
+            process.stderr.write(`Downloading: ${(fileSize(remoteFileStream.readBytes) + '/' + fileSize(fileEntry.size)).padEnd(20)} ${(Math.round(remoteFileStream.readBytes / fileEntry.size * 100) + '%').padEnd(6)} ${(fileSize(transferRate) + '/s').padEnd(12)} elapsed ${Utils.secondsToHuman(totalTime)}`)
+            await Utils.Wait(900)
+            dt += 0.5
+            totalTime += 0.5
         } while (!remoteFileStream.readableEnded)
 
         process.stderr.write('\nDownload finished.\n')
