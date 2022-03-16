@@ -2,3 +2,4 @@
 *.fsx*
 node_modules/
 dist/
+*.img*

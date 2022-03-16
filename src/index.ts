@@ -188,12 +188,26 @@ const main = async () => {
         process.stdin.pipe(remoteFileStream)
 
         // Show status information
+        let previousTotalUploadedBytes = 0
+        let dt = 0
+        let totalTime = 0
+        let uploadRate = 0
         do {
-            process.stderr.write(`Uploading: ${fileSize(remoteFileStream.uploadedBytes)} sent\r`)
+            if (previousTotalUploadedBytes !== remoteFileStream.uploadedBytes) {
+                uploadRate = Math.floor((remoteFileStream.uploadedBytes - previousTotalUploadedBytes) / dt)
+                previousTotalUploadedBytes = remoteFileStream.uploadedBytes
+                dt = -0.5
+            }
+
+            process.stderr.clearLine(0)
+            process.stderr.cursorTo(0)
+            process.stderr.write(`Uploading: ${fileSize(remoteFileStream.uploadedBytes)} sent - ${fileSize(uploadRate)}/s - elapsed ${Utils.secondsToHuman(totalTime)}`)
             await Utils.Wait(500)
+            dt += 0.5
+            totalTime += 0.5
         } while (!remoteFileStream.writableFinished)
 
-        process.stderr.write('\nUpload finished.\n')
+        process.stderr.write(`\nUpload finished.\n`)
 
         await saveFileSystem(fileSystem)
     } else if (operation === 'mv') {
