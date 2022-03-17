@@ -1,7 +1,8 @@
 import * as fsp from 'fs/promises'
 import * as fs from 'fs'
+import * as path from 'path'
 
-import FileSystem from '@lucas-bortoli/libdiscord-fs'
+import FileSystem from '../../libdiscord-fs'
 
 import Utils from './utils.js'
 
@@ -50,31 +51,35 @@ const fsp_fileExists = async (path: string): Promise<boolean> => {
 
 /**
  * Initializes a filesystem object.
- * @param driveId What drive id to use for the filesystem
+ * @param drivePath What drive id to use for the filesystem
  */
-const openFileSystem = async (driveId: string): Promise<FileSystem> => {
-    const fs = new FileSystem(`${driveId}.fsx`, process.env.DISCORD_WEBHOOK)
-    
-    if (await fsp_fileExists(fs.dataFile + '.working')) {
+const openFileSystem = async (drivePath: string): Promise<FileSystem> => {
+    const libfs = new FileSystem(process.env.DISCORD_WEBHOOK)
+    let dataFile = path.resolve(drivePath)
+
+    if (await fsp_fileExists(dataFile + '.working')) {
         // If there is a temporary file, we load it. 
-        fs.dataFile = fs.dataFile + '.working'
-        await fs.loadDataFile()
+        dataFile = dataFile + '.working'
     } else {
         // Or else, we load the original file to memory and don't touch it.
-        await fs.loadDataFile()
-        fs.dataFile = fs.dataFile + '.working'
     }
-    
-    return fs
+
+    const fileStream = fs.createReadStream(dataFile)
+
+    await libfs.loadDataFromStream(fileStream)
+
+    return libfs
 }
 
-const saveFileSystem = async (fs: FileSystem, commit?: boolean): Promise<void> => {
-    if (commit) {
-        await fsp.rm(fs.dataFile)
-        fs.dataFile = fs.dataFile.replace('.working', '')
-    }
+const saveFileSystem = async (drivePath: string, fsx: FileSystem, commit?: boolean): Promise<void> => {
+    drivePath = path.resolve(drivePath)
+
+    if (commit)
+        if (fsp_fileExists(drivePath + '.working'))
+            await fsp.rm(drivePath + '.working')
     
-    await fs.writeDataFile()
+    const fileStream = fs.createWriteStream(drivePath)
+    await fsx.writeDataToStream(fileStream)
 } 
 
 /**
