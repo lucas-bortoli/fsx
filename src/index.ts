@@ -5,7 +5,8 @@ import FileSystem from '@lucas-bortoli/libdiscord-fs'
 
 import Utils from './utils.js'
 
-const REMOTE_PATH_REGEXP = /^([A-Za-zÀ-ÖØ-öø-ÿ]+)::(\/.*)$/
+const REMOTE_PATH_WITH_DRIVE_REGEXP = /^(.*[^\/])::(\/.*)$/m
+const REMOTE_PATH_WITHOUT_DRIVE_REGEXP = /^(\/.*)$/
 
 interface ParsedRemotePath { driveId: string, remotePath: string }
 
@@ -17,11 +18,19 @@ console.log = console.error
  * Checks if a given path is remote. Remote paths start with "driveName::/"
  */
 const isValidRemotePath = (p: string): boolean => {
-    return !!p.match(REMOTE_PATH_REGEXP)
+    if (process.env.FSX_DRIVE)
+        return !!p.match(REMOTE_PATH_WITHOUT_DRIVE_REGEXP)
+
+    return !!p.match(REMOTE_PATH_WITH_DRIVE_REGEXP)
 }
 
 const parseRemotePath = (p: string): ParsedRemotePath => {
-    const match = p.match(REMOTE_PATH_REGEXP)
+    if (process.env.FSX_DRIVE) {
+        const match = p.match(REMOTE_PATH_WITHOUT_DRIVE_REGEXP)
+        return { driveId: process.env.FSX_DRIVE, remotePath: match[1] }
+    }
+
+    const match = p.match(REMOTE_PATH_WITH_DRIVE_REGEXP)
     return { driveId: match[1], remotePath: match[2] }
 }
 
