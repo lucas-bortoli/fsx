@@ -2,7 +2,7 @@ import * as fsp from 'fs/promises'
 import * as fs from 'fs'
 import * as path from 'path'
 
-import FileSystem from '../../libdiscord-fs'
+import FileSystem from '@lucas-bortoli/libdiscord-fs'
 
 import Utils from './utils.js'
 
@@ -56,13 +56,21 @@ const fsp_fileExists = async (path: string): Promise<boolean> => {
 const openFileSystem = async (drivePath: string): Promise<FileSystem> => {
     const libfs = new FileSystem(process.env.DISCORD_WEBHOOK)
     let dataFile = path.resolve(drivePath)
-
+    
     if (await fsp_fileExists(dataFile + '.working')) {
         // If there is a temporary file, we load it. 
         dataFile = dataFile + '.working'
     } else {
         // Or else, we load the original file to memory and don't touch it.
     }
+
+    // If file doesn't exist, proceed with an empty filesystem
+    if (!await fsp_fileExists(dataFile)) {
+        console.error(`Tried to open data file ${dataFile}, but it doesn't exist. Proceeding with an empty filesystem.`)
+        return libfs
+    }
+
+    console.error(`Opening data file ${dataFile}`)
 
     const fileStream = fs.createReadStream(dataFile)
 
@@ -74,9 +82,12 @@ const openFileSystem = async (drivePath: string): Promise<FileSystem> => {
 const saveFileSystem = async (drivePath: string, fsx: FileSystem, commit?: boolean): Promise<void> => {
     drivePath = path.resolve(drivePath)
 
-    if (commit)
+    if (commit) {
         if (fsp_fileExists(drivePath + '.working'))
             await fsp.rm(drivePath + '.working')
+    } else {
+        drivePath = drivePath + '.working'
+    }
     
     const fileStream = fs.createWriteStream(drivePath)
     await fsx.writeDataToStream(fileStream)
@@ -236,7 +247,7 @@ const main = async () => {
 
         process.stderr.write(`\nUpload finished.\n`)
 
-        await saveFileSystem(fileSystem)
+        await saveFileSystem(driveId, fileSystem)
     } else if (operation === 'mv') {
         // Validate remote path parameter
         if (!operand1 || !operand2)
@@ -263,7 +274,7 @@ const main = async () => {
         }
 
         fileSystem.mv(pathFrom.remotePath, pathTo.remotePath)
-        await saveFileSystem(fileSystem)
+        await saveFileSystem(pathFrom.driveId, fileSystem)
     } else if (operation === 'rm') {
         // Validate remote path parameter
         if (!operand1)
@@ -281,7 +292,7 @@ const main = async () => {
         }
 
         fileSystem.rm(target.remotePath)
-        await saveFileSystem(fileSystem)
+        await saveFileSystem(target.driveId, fileSystem)
     } else if (operation === 'cp') {
         // Validate remote path parameter
         if (!operand1 || !operand2)
@@ -308,7 +319,7 @@ const main = async () => {
         }
 
         fileSystem.cp(pathFrom.remotePath, pathTo.remotePath)
-        await saveFileSystem(fileSystem)
+        await saveFileSystem(pathFrom.driveId, fileSystem)
 
     } else if (operation === 'ls') {
         // Validate remote path parameter
@@ -342,11 +353,12 @@ const main = async () => {
         }
     } else if (operation === 'save') {
         // Validate remote path parameter
-        if (!operand1)
+        if (!operand1 && !process.env.FSX_DRIVE)
             return showHelpPageAndExit('save: Missing parameters')
 
-        const fileSystem = await openFileSystem(operand1)
-        await saveFileSystem(fileSystem, true)
+        const drive = operand1 || process.env.FSX_DRIVE
+        const fileSystem = await openFileSystem(drive)
+        await saveFileSystem(drive, fileSystem, true)
     } else {
         return showHelpPageAndExit(`Invalid command: ${operation}`)
     }
