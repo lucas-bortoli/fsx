@@ -70,7 +70,7 @@ const openFileSystem = async (drivePath: string): Promise<FileSystem> => {
         return libfs
     }
 
-    console.error(`Opening data file ${dataFile}`)
+    // console.error(`Opening data file ${dataFile}`)
 
     const fileStream = fs.createReadStream(dataFile)
 
