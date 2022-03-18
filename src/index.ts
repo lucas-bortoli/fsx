@@ -2,7 +2,7 @@ import * as fsp from 'fs/promises'
 import * as fs from 'fs'
 import * as path from 'path'
 
-import FileSystem from '@lucas-bortoli/libdiscord-fs'
+import FileSystem from '../../libdiscord-fs/lib/index.js'
 
 import Utils from './utils.js'
 
