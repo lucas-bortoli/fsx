@@ -28,11 +28,11 @@ const isValidRemotePath = (p: string): boolean => {
 const parseRemotePath = (p: string): ParsedRemotePath => {
     if (process.env.FSX_DRIVE) {
         const match = p.match(REMOTE_PATH_WITHOUT_DRIVE_REGEXP)
-        return { driveId: process.env.FSX_DRIVE, remotePath: match[1] }
+        return { driveId: process.env.FSX_DRIVE, remotePath: match[1].replaceAll('+', ' ') }
     }
 
     const match = p.match(REMOTE_PATH_WITH_DRIVE_REGEXP)
-    return { driveId: match[1], remotePath: match[2] }
+    return { driveId: match[1], remotePath: match[2].replaceAll('+', ' ') }
 }
 
 /**
@@ -359,6 +359,40 @@ const main = async () => {
         const drive = operand1 || process.env.FSX_DRIVE
         const fileSystem = await openFileSystem(drive)
         await saveFileSystem(drive, fileSystem, true)
+    } else if (operation === 'shell-completion') {
+        // Validate remote path parameter
+        if (!operand1 || !isValidRemotePath(operand1)) {
+            process.stdout.write('/~~~')
+            return process.exit(1)
+        }
+
+        const targetDir = parseRemotePath(operand1)
+        const fileSystem = await openFileSystem(targetDir.driveId)
+
+        if (!targetDir.remotePath.endsWith('/')) {
+            targetDir.remotePath = path.dirname(targetDir.remotePath)
+        }
+
+        let target = fileSystem.getEntry(targetDir.remotePath)
+
+        if (!target || target.type !== 'directory') {
+            targetDir.remotePath = path.dirname(targetDir.remotePath)
+            target = fileSystem.getEntry(targetDir.remotePath)
+
+            if (!target) return process.exit(1)
+            if (target.type === 'file') {
+                process.stdout.write(targetDir.remotePath)
+                return process.exit(1)
+            }
+        }
+
+        for (const [ name, child ] of Object.entries(target.items)) {
+            if (child.type === 'directory') {
+                process.stdout.write(`${path.join(targetDir.remotePath, name).replaceAll(' ', '+')}/~~~`)
+            } else {
+                process.stdout.write(`${path.join(targetDir.remotePath, name).replaceAll(' ', '+')}~~~`)
+            }
+        }  
     } else {
         return showHelpPageAndExit(`Invalid command: ${operation}`)
     }
