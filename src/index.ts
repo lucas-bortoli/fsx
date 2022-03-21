@@ -110,7 +110,7 @@ const main = async () => {
     if (!operation)
         return showHelpPageAndExit('No command given.')
 
-    if (!'upload,download,cp,rm,mv,ls,help'.split(',').includes(operation))
+    if (!'upload,download,cp,rm,mv,ls,help,shell-completion'.split(',').includes(operation))
         return showHelpPageAndExit(`Invalid command: ${operation}`)
 
     if (args.includes('--silent'))
