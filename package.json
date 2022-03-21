@@ -9,6 +9,7 @@
     },
     "dependencies": {
         "@lucas-bortoli/libdiscord-fs": "^2.3.6",
+        "omelette": "^0.4.17",
         "typescript": "^4.6.2"
     },
     "devDependencies": {

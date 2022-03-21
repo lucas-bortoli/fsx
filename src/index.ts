@@ -13,6 +13,13 @@ interface ParsedRemotePath { driveId: string, remotePath: string }
 
 // All log messages should be written to stderr, because stdout is used for file
 // data
+const Mode = { SILENT: false }
+const _conserror = console.error
+console.error = (...args) => {
+    if (Mode.SILENT) return
+    
+    _conserror(...args)
+}
 console.log = console.error
 
 /**
@@ -143,7 +150,7 @@ const main = async () => {
 
     // Remove the first two elements from the argv array; we don't care about
     // Node's binary location or the current script path
-    const args = process.argv.slice(2)
+    const args = [].concat(process.argv.slice(2))
 
     // First argument will be the operation: upload/download/ls/rm/help...
     const operation = args[0]
@@ -154,6 +161,9 @@ const main = async () => {
 
     if (!operation)
         return showHelpPageAndExit('No command given.')
+
+    if (args.includes('--silent'))
+        Mode.SILENT = true
 
     if (operation.replace('--', '') === 'help') {
         return showHelpPageAndExit()
@@ -185,26 +195,29 @@ const main = async () => {
         // Pipe downloaded data to stdout
         remoteFileStream.pipe(process.stdout)
 
-        let previousTotalByteCount = 0
-        let dt = 0
-        let totalTime = 0
-        let transferRate = 0
+        if (!Mode.SILENT) {
+            let previousTotalByteCount = 0
+            let dt = 0
+            let totalTime = 0
+            let transferRate = 0
+            
+            do {
+                if (previousTotalByteCount !== remoteFileStream.readBytes) {
+                    transferRate = Math.floor((remoteFileStream.readBytes - previousTotalByteCount) / dt)
+                    previousTotalByteCount = remoteFileStream.readBytes
+                    dt = -0.5
+                }
+                process.stderr.clearLine(0)
+                process.stderr.cursorTo(0)
+                process.stderr.write(`Downloading: ${(fileSize(remoteFileStream.readBytes) + '/' + fileSize(fileEntry.size)).padEnd(20)} ${(Math.round(remoteFileStream.readBytes / fileEntry.size * 100) + '%').padEnd(6)} ${(fileSize(transferRate) + '/s').padEnd(12)} elapsed ${Utils.secondsToHuman(totalTime)}`)
+                await Utils.Wait(900)
+                dt += 0.5
+                totalTime += 0.5
+            } while (!remoteFileStream.readableEnded)
+    
+            process.stderr.write('\nDownload finished.\n')
+        }
         
-        do {
-            if (previousTotalByteCount !== remoteFileStream.readBytes) {
-                transferRate = Math.floor((remoteFileStream.readBytes - previousTotalByteCount) / dt)
-                previousTotalByteCount = remoteFileStream.readBytes
-                dt = -0.5
-            }
-            process.stderr.clearLine(0)
-            process.stderr.cursorTo(0)
-            process.stderr.write(`Downloading: ${(fileSize(remoteFileStream.readBytes) + '/' + fileSize(fileEntry.size)).padEnd(20)} ${(Math.round(remoteFileStream.readBytes / fileEntry.size * 100) + '%').padEnd(6)} ${(fileSize(transferRate) + '/s').padEnd(12)} elapsed ${Utils.secondsToHuman(totalTime)}`)
-            await Utils.Wait(900)
-            dt += 0.5
-            totalTime += 0.5
-        } while (!remoteFileStream.readableEnded)
-
-        process.stderr.write('\nDownload finished.\n')
     } else if (operation === 'upload') {
         // Validate remote path parameter
         if (!operand1)
@@ -225,27 +238,30 @@ const main = async () => {
         // Pipe stdin to the upload stream
         process.stdin.pipe(remoteFileStream)
 
-        // Show status information
-        let previousTotalUploadedBytes = 0
-        let dt = 0
-        let totalTime = 0
-        let uploadRate = 0
-        do {
-            if (previousTotalUploadedBytes !== remoteFileStream.uploadedBytes) {
-                uploadRate = Math.floor((remoteFileStream.uploadedBytes - previousTotalUploadedBytes) / dt)
-                previousTotalUploadedBytes = remoteFileStream.uploadedBytes
-                dt = -0.5
-            }
+        if (!Mode.SILENT) {
+            // Show status information
+            let previousTotalUploadedBytes = 0
+            let dt = 0
+            let totalTime = 0
+            let uploadRate = 0
 
-            process.stderr.clearLine(0)
-            process.stderr.cursorTo(0)
-            process.stderr.write(`Uploading: ${fileSize(remoteFileStream.uploadedBytes)} sent - ${fileSize(uploadRate)}/s - elapsed ${Utils.secondsToHuman(totalTime)}`)
-            await Utils.Wait(500)
-            dt += 0.5
-            totalTime += 0.5
-        } while (!remoteFileStream.writableFinished)
+            do {
+                if (previousTotalUploadedBytes !== remoteFileStream.uploadedBytes) {
+                    uploadRate = Math.floor((remoteFileStream.uploadedBytes - previousTotalUploadedBytes) / dt)
+                    previousTotalUploadedBytes = remoteFileStream.uploadedBytes
+                    dt = -0.5
+                }
 
-        process.stderr.write(`\nUpload finished.\n`)
+                process.stderr.clearLine(0)
+                process.stderr.cursorTo(0)
+                process.stderr.write(`Uploading: ${fileSize(remoteFileStream.uploadedBytes)} sent - ${fileSize(uploadRate)}/s - elapsed ${Utils.secondsToHuman(totalTime)}`)
+                await Utils.Wait(500)
+                dt += 0.5
+                totalTime += 0.5
+            } while (!remoteFileStream.writableFinished)
+
+            process.stderr.write(`\nUpload finished.\n`)
+        }
 
         await saveFileSystem(driveId, fileSystem)
     } else if (operation === 'mv') {

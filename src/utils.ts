@@ -1,4 +1,5 @@
 import { Entry } from '@lucas-bortoli/libdiscord-fs'
+import { Writable } from 'stream'
 
 export default abstract class Utils {
     public static naturalSort(entries: [string, Entry][]): [string, Entry][] {
