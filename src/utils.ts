@@ -43,4 +43,16 @@ export default abstract class Utils {
     
         return "< 1s";
     }
+
+    /**
+     * Best date string format: "YYYY-MM-DD hh:mm:ss"
+     * I was going to add moment.js just for this but that's too heavy
+     */
+    public static bestDateFormat(date: Date|number): string {
+        if (!(date instanceof Date))
+            date = new Date(date)
+
+        const pad = s => s.toString().padStart(2, '0')
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+    }
 }

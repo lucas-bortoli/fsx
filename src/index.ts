@@ -344,11 +344,13 @@ const main = async () => {
             return process.exit(1)
         }
 
+        const biggestNameLength = Math.max(Math.max(...Object.keys(target.items).map(name => name.length)), 0)
+
         for (const [ name, child ] of Utils.naturalSort(Object.entries(target.items))) {
             if (child.type === 'directory') {
-                process.stdout.write(`${name.padEnd(16)} DIRECTORY ${Utils.unit(Object.values(child.items).length, 'item').padStart(12)}\n`)
+                process.stdout.write(`${(name + '/').padEnd(biggestNameLength)} DIRECTORY ${Utils.unit(Object.values(child.items).length, 'item').padStart(12)}\n`)
             } else {
-                process.stdout.write(`${name.padEnd(16)} FILE      ${fileSize(child.size).padStart(12)}\n`)
+                process.stdout.write(`${name.padEnd(biggestNameLength)} FILE      ${fileSize(child.size).padStart(12)}  ${Utils.bestDateFormat(child.ctime)} \n`)
             }
         }
     } else if (operation === 'save') {
