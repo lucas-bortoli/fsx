@@ -1,5 +1,10 @@
 import { Entry } from '@lucas-bortoli/libdiscord-fs'
-import { Writable } from 'stream'
+import * as fsp from 'fs/promises'
+import * as fs from 'fs'
+
+const REMOTE_PATH_WITH_DRIVE_REGEXP = /^(.*[^\/])::(\/.*)$/m
+const REMOTE_PATH_WITHOUT_DRIVE_REGEXP = /^(\/.*)$/
+interface ParsedRemotePath { driveId: string, remotePath: string }
 
 export default abstract class Utils {
     public static naturalSort(entries: [string, Entry][]): [string, Entry][] {
@@ -55,5 +60,48 @@ export default abstract class Utils {
 
         const pad = s => s.toString().padStart(2, '0')
         return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+    }
+
+    /**
+     * Checks if a file exists in the filesystem.
+     * @param path Path to file
+     * @returns true if the file exists and is readable.
+     */
+    public static async fsp_fileExists(path: string): Promise<boolean> {
+        try {
+            await fsp.access(path, fs.constants.F_OK)
+            return true
+        } catch (error) {
+            return false
+        }
+    }
+
+    /**
+     * Checks if a given path is remote. Remote paths start with "driveName::/"
+     */
+    public static isValidRemotePath(p: string): boolean {
+        if (process.env.FSX_DRIVE)
+            return !!p.match(REMOTE_PATH_WITHOUT_DRIVE_REGEXP)
+
+        return !!p.match(REMOTE_PATH_WITH_DRIVE_REGEXP)
+    }
+
+    public static parseRemotePath(p: string): ParsedRemotePath {
+        if (process.env.FSX_DRIVE) {
+            const match = p.match(REMOTE_PATH_WITHOUT_DRIVE_REGEXP)
+            return { driveId: process.env.FSX_DRIVE, remotePath: match[1].replaceAll('+', ' ') }
+        }
+    
+        const match = p.match(REMOTE_PATH_WITH_DRIVE_REGEXP)
+        return { driveId: match[1], remotePath: match[2].replaceAll('+', ' ') }
+    }
+
+    /**
+     * Converts a byte count to a human-readable file size.
+     */
+    public static fileSize(bytes: number): string {
+        if (bytes == 0) { return "0.00 B"; }
+        var e = Math.floor(Math.log(bytes) / Math.log(1024));
+        return (bytes/Math.pow(1024, e)).toFixed(2)+' '+' KMGTP'.charAt(e)+'B';
     }
 }

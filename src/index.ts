@@ -1,15 +1,8 @@
 import * as fsp from 'fs/promises'
 import * as fs from 'fs'
 import * as path from 'path'
-
 import FileSystem from '@lucas-bortoli/libdiscord-fs'
-
 import Utils from './utils.js'
-
-const REMOTE_PATH_WITH_DRIVE_REGEXP = /^(.*[^\/])::(\/.*)$/m
-const REMOTE_PATH_WITHOUT_DRIVE_REGEXP = /^(\/.*)$/
-
-interface ParsedRemotePath { driveId: string, remotePath: string }
 
 // All log messages should be written to stderr, because stdout is used for file
 // data
@@ -23,40 +16,6 @@ console.error = (...args) => {
 console.log = console.error
 
 /**
- * Checks if a given path is remote. Remote paths start with "driveName::/"
- */
-const isValidRemotePath = (p: string): boolean => {
-    if (process.env.FSX_DRIVE)
-        return !!p.match(REMOTE_PATH_WITHOUT_DRIVE_REGEXP)
-
-    return !!p.match(REMOTE_PATH_WITH_DRIVE_REGEXP)
-}
-
-const parseRemotePath = (p: string): ParsedRemotePath => {
-    if (process.env.FSX_DRIVE) {
-        const match = p.match(REMOTE_PATH_WITHOUT_DRIVE_REGEXP)
-        return { driveId: process.env.FSX_DRIVE, remotePath: match[1].replaceAll('+', ' ') }
-    }
-
-    const match = p.match(REMOTE_PATH_WITH_DRIVE_REGEXP)
-    return { driveId: match[1], remotePath: match[2].replaceAll('+', ' ') }
-}
-
-/**
- * Checks if a file exists in the filesystem.
- * @param path Path to file
- * @returns true if the file exists and is readable.
- */
-const fsp_fileExists = async (path: string): Promise<boolean> => {
-    try {
-        await fsp.access(path, fs.constants.F_OK)
-        return true
-    } catch (error) {
-        return false
-    }
-}
-
-/**
  * Initializes a filesystem object.
  * @param drivePath What drive id to use for the filesystem
  */
@@ -64,20 +23,17 @@ const openFileSystem = async (drivePath: string): Promise<FileSystem> => {
     const libfs = new FileSystem(process.env.DISCORD_WEBHOOK)
     let dataFile = path.resolve(drivePath)
     
-    if (await fsp_fileExists(dataFile + '.working')) {
+    if (await Utils.fsp_fileExists(dataFile + '.working')) {
         // If there is a temporary file, we load it. 
         dataFile = dataFile + '.working'
-    } else {
-        // Or else, we load the original file to memory and don't touch it.
     }
+    // ...Or else, we load the original file to memory and don't touch it.
 
     // If file doesn't exist, proceed with an empty filesystem
-    if (!await fsp_fileExists(dataFile)) {
+    if (!await Utils.fsp_fileExists(dataFile)) {
         console.error(`Tried to open data file ${dataFile}, but it doesn't exist. Proceeding with an empty filesystem.`)
         return libfs
     }
-
-    // console.error(`Opening data file ${dataFile}`)
 
     const fileStream = fs.createReadStream(dataFile)
 
@@ -90,7 +46,7 @@ const saveFileSystem = async (drivePath: string, fsx: FileSystem, commit?: boole
     drivePath = path.resolve(drivePath)
 
     if (commit) {
-        if (fsp_fileExists(drivePath + '.working'))
+        if (Utils.fsp_fileExists(drivePath + '.working'))
             await fsp.rm(drivePath + '.working')
     } else {
         drivePath = drivePath + '.working'
@@ -98,15 +54,6 @@ const saveFileSystem = async (drivePath: string, fsx: FileSystem, commit?: boole
     
     const fileStream = fs.createWriteStream(drivePath)
     await fsx.writeDataToStream(fileStream)
-} 
-
-/**
- * Converts a byte count to a human-readable file size.
- */
-const fileSize = (bytes: number): string => {
-    if (bytes == 0) { return "0.00 B"; }
-    var e = Math.floor(Math.log(bytes) / Math.log(1024));
-    return (bytes/Math.pow(1024, e)).toFixed(2)+' '+' KMGTP'.charAt(e)+'B';
 }
 
 /**
@@ -163,6 +110,9 @@ const main = async () => {
     if (!operation)
         return showHelpPageAndExit('No command given.')
 
+    if (!'upload,download,cp,rm,mv,ls,help'.split(',').includes(operation))
+        return showHelpPageAndExit(`Invalid command: ${operation}`)
+
     if (args.includes('--silent'))
         Mode.SILENT = true
 
@@ -174,10 +124,10 @@ const main = async () => {
         if (!operand1)
             return showHelpPageAndExit('download: Missing parameters')
 
-        if (!isValidRemotePath(operand1))
+        if (!Utils.isValidRemotePath(operand1))
             return showHelpPageAndExit(`download: Invalid remote path ${operand1} (not in format driveId::/path/to/file)`)
 
-        const { driveId, remotePath } = parseRemotePath(operand1)
+        const { driveId, remotePath } = Utils.parseRemotePath(operand1)
 
         const fileSystem = await openFileSystem(driveId)
         const fileEntry = fileSystem.getEntry(remotePath)
@@ -211,7 +161,7 @@ const main = async () => {
                 }
                 process.stderr.clearLine(0)
                 process.stderr.cursorTo(0)
-                process.stderr.write(`Downloading: ${(fileSize(remoteFileStream.readBytes) + '/' + fileSize(fileEntry.size)).padEnd(20)} ${(Math.round(remoteFileStream.readBytes / fileEntry.size * 100) + '%').padEnd(6)} ${(fileSize(transferRate) + '/s').padEnd(12)} elapsed ${Utils.secondsToHuman(totalTime)}`)
+                process.stderr.write(`Downloading: ${(Utils.fileSize(remoteFileStream.readBytes) + '/' + Utils.fileSize(fileEntry.size)).padEnd(20)} ${(Math.round(remoteFileStream.readBytes / fileEntry.size * 100) + '%').padEnd(6)} ${(Utils.fileSize(transferRate) + '/s').padEnd(12)} elapsed ${Utils.secondsToHuman(totalTime)}`)
                 await Utils.Wait(900)
                 dt += 0.5
                 totalTime += 0.5
@@ -220,15 +170,18 @@ const main = async () => {
             process.stderr.write('\nDownload finished.\n')
         }
         
-    } else if (operation === 'upload') {
+    }
+    
+    
+    if (operation === 'upload') {
         // Validate remote path parameter
         if (!operand1)
             return showHelpPageAndExit('upload: Missing parameters')
 
-        if (!isValidRemotePath(operand1))
+        if (!Utils.isValidRemotePath(operand1))
             return showHelpPageAndExit(`upload: Invalid remote path ${operand1} (not in format driveId::/path/to/file)`)
 
-        const { driveId, remotePath } = parseRemotePath(operand1)
+        const { driveId, remotePath } = Utils.parseRemotePath(operand1)
 
         // Can't upload a file with to a directory path
         if (remotePath.endsWith('/'))
@@ -256,7 +209,7 @@ const main = async () => {
 
                 process.stderr.clearLine(0)
                 process.stderr.cursorTo(0)
-                process.stderr.write(`Uploading: ${fileSize(remoteFileStream.uploadedBytes)} sent - ${fileSize(uploadRate)}/s - elapsed ${Utils.secondsToHuman(totalTime)}`)
+                process.stderr.write(`Uploading: ${Utils.fileSize(remoteFileStream.uploadedBytes)} sent - ${Utils.fileSize(uploadRate)}/s - elapsed ${Utils.secondsToHuman(totalTime)}`)
                 await Utils.Wait(500)
                 dt += 0.5
                 totalTime += 0.5
@@ -266,18 +219,21 @@ const main = async () => {
         }
 
         await saveFileSystem(driveId, fileSystem)
-    } else if (operation === 'mv') {
+    }
+    
+    
+    if (operation === 'mv') {
         // Validate remote path parameter
         if (!operand1 || !operand2)
             return showHelpPageAndExit('mv: Missing parameters')
     
-        if (!isValidRemotePath(operand1))
+        if (!Utils.isValidRemotePath(operand1))
             return showHelpPageAndExit(`mv: Invalid remote path ${operand1} (not in format driveId::/path/to/file)`)
-        if (!isValidRemotePath(operand2))
+        if (!Utils.isValidRemotePath(operand2))
             return showHelpPageAndExit(`mv: Invalid remote path ${operand2} (not in format driveId::/path/to/file)`)
     
-        const pathFrom = parseRemotePath(operand1)
-        const pathTo = parseRemotePath(operand2)
+        const pathFrom = Utils.parseRemotePath(operand1)
+        const pathTo = Utils.parseRemotePath(operand2)
 
         if (pathFrom.driveId !== pathTo.driveId) {
             console.error(`mv: Unsupported cross-drive move operation (${pathFrom.driveId} -> ${pathTo.driveId})`)
@@ -293,15 +249,18 @@ const main = async () => {
 
         fileSystem.mv(pathFrom.remotePath, pathTo.remotePath)
         await saveFileSystem(pathFrom.driveId, fileSystem)
-    } else if (operation === 'rm') {
+    }
+    
+    
+    if (operation === 'rm') {
         // Validate remote path parameter
         if (!operand1)
             return showHelpPageAndExit('rm: Missing parameters')
 
-        if (!isValidRemotePath(operand1))
+        if (!Utils.isValidRemotePath(operand1))
             return showHelpPageAndExit(`rm: Invalid remote path ${operand1} (not in format driveId::/path/to/file)`)
         
-        const target = parseRemotePath(operand1)
+        const target = Utils.parseRemotePath(operand1)
         const fileSystem = await openFileSystem(target.driveId)
 
         if (!await fileSystem.exists(target.remotePath)) {
@@ -311,18 +270,21 @@ const main = async () => {
 
         fileSystem.rm(target.remotePath)
         await saveFileSystem(target.driveId, fileSystem)
-    } else if (operation === 'cp') {
+    }
+    
+    
+    if (operation === 'cp') {
         // Validate remote path parameter
         if (!operand1 || !operand2)
             return showHelpPageAndExit('cp: Missing parameters')
 
-        if (!isValidRemotePath(operand1))
+        if (!Utils.isValidRemotePath(operand1))
             return showHelpPageAndExit(`cp: Invalid remote path ${operand1} (not in format driveId::/path/to/file)`)
-        if (!isValidRemotePath(operand2))
+        if (!Utils.isValidRemotePath(operand2))
             return showHelpPageAndExit(`mv: Invalid remote path ${operand2} (not in format driveId::/path/to/file)`)
     
-        const pathFrom = parseRemotePath(operand1)
-        const pathTo = parseRemotePath(operand2)
+        const pathFrom = Utils.parseRemotePath(operand1)
+        const pathTo = Utils.parseRemotePath(operand2)
 
         if (pathFrom.driveId !== pathTo.driveId) {
             console.error(`cp: Unsupported cross-drive copy operation (${pathFrom.driveId} -> ${pathTo.driveId})`)
@@ -339,15 +301,18 @@ const main = async () => {
         fileSystem.cp(pathFrom.remotePath, pathTo.remotePath)
         await saveFileSystem(pathFrom.driveId, fileSystem)
 
-    } else if (operation === 'ls') {
+    }
+    
+    
+    if (operation === 'ls') {
         // Validate remote path parameter
         if (!operand1)
             return showHelpPageAndExit('ls')
         
-        if (!isValidRemotePath(operand1))
+        if (!Utils.isValidRemotePath(operand1))
             return showHelpPageAndExit(`ls: Invalid remote path ${operand1} (not in format driveId::/path/to/file)`)
 
-        const path = parseRemotePath(operand1)
+        const path = Utils.parseRemotePath(operand1)
         const fileSystem = await openFileSystem(path.driveId)
 
         const target = fileSystem.getEntry(path.remotePath)
@@ -368,10 +333,13 @@ const main = async () => {
             if (child.type === 'directory') {
                 process.stdout.write(`${(name + '/').padEnd(biggestNameLength)} DIRECTORY ${Utils.unit(Object.values(child.items).length, 'item').padStart(12)}\n`)
             } else {
-                process.stdout.write(`${name.padEnd(biggestNameLength)} FILE      ${fileSize(child.size).padStart(12)}  ${Utils.bestDateFormat(child.ctime)} \n`)
+                process.stdout.write(`${name.padEnd(biggestNameLength)} FILE      ${Utils.fileSize(child.size).padStart(12)}  ${Utils.bestDateFormat(child.ctime)} \n`)
             }
         }
-    } else if (operation === 'save') {
+    }
+    
+    
+    if (operation === 'save') {
         // Validate remote path parameter
         if (!operand1 && !process.env.FSX_DRIVE)
             return showHelpPageAndExit('save: Missing parameters')
@@ -379,14 +347,17 @@ const main = async () => {
         const drive = operand1 || process.env.FSX_DRIVE
         const fileSystem = await openFileSystem(drive)
         await saveFileSystem(drive, fileSystem, true)
-    } else if (operation === 'shell-completion') {
+    }
+
+    
+    if (operation === 'shell-completion') {
         // Validate remote path parameter
-        if (!operand1 || !isValidRemotePath(operand1)) {
+        if (!operand1 || !Utils.isValidRemotePath(operand1)) {
             process.stdout.write('/~~~')
             return process.exit(1)
         }
 
-        const targetDir = parseRemotePath(operand1)
+        const targetDir = Utils.parseRemotePath(operand1)
         const fileSystem = await openFileSystem(targetDir.driveId)
 
         if (!targetDir.remotePath.endsWith('/')) {
@@ -413,8 +384,6 @@ const main = async () => {
                 process.stdout.write(`${path.join(targetDir.remotePath, name).replaceAll(' ', '+')}~~~`)
             }
         }  
-    } else {
-        return showHelpPageAndExit(`Invalid command: ${operation}`)
     }
 }
 
