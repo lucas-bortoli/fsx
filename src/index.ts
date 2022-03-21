@@ -150,14 +150,15 @@ const main = async () => {
 
     // Remove the first two elements from the argv array; we don't care about
     // Node's binary location or the current script path
-    const args = [].concat(process.argv.slice(2))
+    const args: string[] = [].concat(process.argv.slice(2))
+    const argsWithoutFlags: string[] = args.filter(arg => !arg.startsWith('-'))
 
     // First argument will be the operation: upload/download/ls/rm/help...
-    const operation = args[0]
+    const operation = argsWithoutFlags[0]
 
     // The next two arguments will be the operands.
-    const operand1 = args[1]
-    const operand2 = args[2]
+    const operand1 = argsWithoutFlags[1]
+    const operand2 = argsWithoutFlags[2]
 
     if (!operation)
         return showHelpPageAndExit('No command given.')
@@ -165,9 +166,10 @@ const main = async () => {
     if (args.includes('--silent'))
         Mode.SILENT = true
 
-    if (operation.replace('--', '') === 'help') {
+    if (operation === 'help' || args.includes('--help') || args.includes('-h'))
         return showHelpPageAndExit()
-    } else if (operation === 'download') {
+    
+    if (operation === 'download') {
         // Validate remote path parameter
         if (!operand1)
             return showHelpPageAndExit('download: Missing parameters')
