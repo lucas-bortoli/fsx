@@ -104,4 +104,20 @@ export default abstract class Utils {
         var e = Math.floor(Math.log(bytes) / Math.log(1024));
         return (bytes/Math.pow(1024, e)).toFixed(2)+' '+' KMGTP'.charAt(e)+'B';
     }
+
+    /**
+     * Takes a maximum amount and a value, and returns a progress bar.
+     * Example: progressBar(30, 100) -> `[===-------] 30%`
+     */
+    public static progressBar(value: number, max: number, barLength: number = 15): string {
+        var segments = '-'.repeat(barLength).split('')
+        var percentage = Math.floor(value / max * 100)
+        var maxIndex = Math.floor(value / max * barLength)
+    
+        for (var i = 0; i < maxIndex; i++) {
+            segments[i] = '='
+        }
+    
+        return `[${segments.join('')}] ${percentage.toString().padStart(3)}%`
+    }
 }

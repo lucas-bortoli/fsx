@@ -154,14 +154,18 @@ const main = async () => {
             let transferRate = 0
             
             do {
+                const [ termCols, termRows ] = process.stderr.getWindowSize()
+                const progressBarLength = Math.max(Math.floor(termCols / 4), 5)
+
                 if (previousTotalByteCount !== remoteFileStream.readBytes) {
                     transferRate = Math.floor((remoteFileStream.readBytes - previousTotalByteCount) / dt)
                     previousTotalByteCount = remoteFileStream.readBytes
                     dt = -0.5
                 }
+
                 process.stderr.clearLine(0)
                 process.stderr.cursorTo(0)
-                process.stderr.write(`Downloading: ${(Utils.fileSize(remoteFileStream.readBytes) + '/' + Utils.fileSize(fileEntry.size)).padEnd(20)} ${(Math.round(remoteFileStream.readBytes / fileEntry.size * 100) + '%').padEnd(6)} ${(Utils.fileSize(transferRate) + '/s').padEnd(12)} elapsed ${Utils.secondsToHuman(totalTime)}`)
+                process.stderr.write(`${Utils.progressBar(remoteFileStream.readBytes, fileEntry.size, progressBarLength)} ${(Utils.fileSize(remoteFileStream.readBytes) + '/' + Utils.fileSize(fileEntry.size)).padStart(20)}   ${(Utils.fileSize(transferRate) + '/s').padEnd(12)} elapsed ${Utils.secondsToHuman(totalTime)}`)
                 await Utils.Wait(900)
                 dt += 0.5
                 totalTime += 0.5
