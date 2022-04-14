@@ -1,7 +1,7 @@
 import * as fsp from 'fs/promises'
 import * as fs from 'fs'
 import * as path from 'path'
-import FileSystem from '@lucas-bortoli/libdiscord-fs'
+import FileSystem, { File } from '@lucas-bortoli/libdiscord-fs'
 import Utils from './utils.js'
 
 // All log messages should be written to stderr, because stdout is used for file
@@ -142,6 +142,9 @@ const main = async () => {
         if (fileEntry.type === 'directory')
             return showHelpPageAndExit(`download: Invalid remote path ${operand1} (is a directory)`)
 
+        if (fileEntry.comment)
+            console.error(`* File comment: ${fileEntry.comment}`)
+
         const remoteFileStream = await fileSystem.createReadStream(remotePath)
 
         // Pipe downloaded data to stdout
@@ -191,8 +194,17 @@ const main = async () => {
         if (remotePath.endsWith('/'))
             return showHelpPageAndExit(`upload: Invalid remote path ${operand1} (is a directory)`)
 
+        const customProps: Partial<File> = {}
+        const propComment = args.find(arg => arg.startsWith('--comment='))
+
+        if (propComment) {
+            customProps.comment = propComment.replace('--comment=', '')
+
+            console.error(`* File comment: ${customProps.comment}`)
+        }
+
         const fileSystem = await openFileSystem(driveId)
-        const remoteFileStream = await fileSystem.createWriteStream(remotePath)
+        const remoteFileStream = await fileSystem.createWriteStream(remotePath, true, customProps)
 
         // Pipe stdin to the upload stream
         process.stdin.pipe(remoteFileStream)
